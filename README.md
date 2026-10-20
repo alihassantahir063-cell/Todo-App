@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Daymark Todo Management
 
 A Todo Management Web Application planned in three phases: PostgreSQL/SQLAlchemy database, FastAPI backend, and React frontend. The frontend in [`frontend/`](./frontend/) is built to the supplied Phase 2 API contract and uses real API requests only.
@@ -22,3 +23,6 @@ The floating Daymark assistant is available to authenticated users and administr
 Conversations are owned by the authenticated account, retain at most 24 recent messages, and expire after 30 days (cleanup is lazy, when a new conversation is created). At most 20 conversations are retained per account. Destructive and sensitive actions require confirmation within 10 minutes. Requests are rate-limited to 20 per minute. Control provider costs by selecting an appropriate tool-capable model, keeping the key/project budget-limited in OpenAI, and monitoring usage. The default relative-date timezone is `Asia/Karachi`; set `DEFAULT_TIMEZONE` to an IANA timezone suitable for the deployment.
 
 For package details, UI verification, deployment notes, and troubleshooting, see the [frontend README](./frontend/README.md). Backend commands require the Phase 1/2 files and PostgreSQL configuration to be present.
+=======
+# Todo-App
+>>>>>>> 2395b96ffc494dfabfaf0373945b60705c149c35
