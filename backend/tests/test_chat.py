@@ -1,10 +1,17 @@
 import json
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from openai import APIConnectionError
 
-from app.chat.provider import get_ai_provider
-from app.chat.provider import ChatProviderError
+from app.chat.provider import (
+    FREE_MODEL_ROUTER,
+    OPENROUTER_BASE_URL,
+    ChatProviderError,
+    OpenRouterProvider,
+    get_ai_provider,
+)
 from app.core.config import settings
 from app.models.chat import ChatConversation
 from app.models.task import Task
@@ -284,12 +291,80 @@ def test_admin_tool_is_not_exposed_to_regular_user(client):
 
 
 def test_provider_without_key_returns_clear_configuration_error(monkeypatch):
-    monkeypatch.setattr(settings, "ai_api_key", None)
+    monkeypatch.setattr(settings, "openrouter_api_key", None)
     get_ai_provider.cache_clear()
     try:
         with pytest.raises(HTTPException) as error:
             get_ai_provider()
         assert error.value.status_code == 503
-        assert "AI_API_KEY" in error.value.detail
+        assert "OPENROUTER_API_KEY" in error.value.detail
     finally:
         get_ai_provider.cache_clear()
+
+
+def test_openrouter_provider_uses_free_router_and_openai_tool_calls():
+    class FakeCompletions:
+        def __init__(self):
+            self.request = None
+
+        def create(self, **request):
+            self.request = request
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(
+                model_dump=lambda exclude_none: {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "list_my_tasks", "arguments": "{\"status\":\"pending\"}"},
+                    }],
+                },
+            ))])
+
+    class FakeChat:
+        def __init__(self):
+            self.completions = FakeCompletions()
+
+    class FakeClient:
+        def __init__(self):
+            self.chat = FakeChat()
+
+    provider = OpenRouterProvider(api_key="test-key", model=FREE_MODEL_ROUTER, timeout=5)
+    provider.client = FakeClient()
+    tools = [{"type": "function", "function": {"name": "list_my_tasks"}}]
+    messages = [{"role": "user", "content": "Show pending tasks."}]
+
+    response = provider.complete(messages, tools)
+
+    request = provider.client.chat.completions.request
+    assert request["model"] == "openrouter/free"
+    assert request["messages"] == messages
+    assert request["tools"] == tools
+    assert request["tool_choice"] == "auto"
+    assert request["max_tokens"] == 700
+    assert json.loads(response["tool_calls"][0]["function"]["arguments"]) == {"status": "pending"}
+
+
+def test_openrouter_provider_reports_api_errors_safely():
+    provider = OpenRouterProvider(api_key="test-key", model=FREE_MODEL_ROUTER, timeout=5)
+
+    class FailingCompletions:
+        def create(self, **request):
+            raise APIConnectionError(request={"method": "POST", "url": OPENROUTER_BASE_URL})
+
+    provider.client.chat.completions = FailingCompletions()
+    with pytest.raises(ChatProviderError):
+        provider.complete([{"role": "user", "content": "Hello"}], [])
+
+
+def test_paid_openrouter_models_are_rejected():
+    from pydantic import ValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(
+            database_url="sqlite://",
+            secret_key="test-secret-key-at-least-32-characters",
+            ai_model="openai/gpt-4o",
+        )

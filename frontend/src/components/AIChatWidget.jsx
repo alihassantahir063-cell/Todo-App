@@ -62,12 +62,79 @@ function ActionResults({ actions = [] }) {
   </div>
 }
 
+function InlineText({ text }) {
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g)
+  return parts.map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>
+    }
+    if (part.startsWith('*') && part.endsWith('*')) {
+      return <em key={index}>{part.slice(1, -1)}</em>
+    }
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return <code key={index}>{part.slice(1, -1)}</code>
+    }
+    return part
+  })
+}
+
+function FormattedReply({ content }) {
+  const blocks = []
+  let paragraph = []
+  let list = []
+
+  function flushParagraph() {
+    if (!paragraph.length) return
+    blocks.push(<p key={`p-${blocks.length}`}><InlineText text={paragraph.join(' ')} /></p>)
+    paragraph = []
+  }
+
+  function flushList() {
+    if (!list.length) return
+    blocks.push(
+      <ul key={`ul-${blocks.length}`}>
+        {list.map((item, index) => <li key={index}><InlineText text={item} /></li>)}
+      </ul>,
+    )
+    list = []
+  }
+
+  content.split(/\r?\n/).forEach((line) => {
+    const heading = line.match(/^\s{0,3}#{1,3}\s+(.+)$/)
+    const unordered = line.match(/^\s*[-*+]\s+(.+)$/)
+    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/)
+
+    if (unordered || ordered) {
+      flushParagraph()
+      list.push((unordered || ordered)[1])
+      return
+    }
+
+    flushList()
+    if (!line.trim()) {
+      flushParagraph()
+      return
+    }
+
+    if (heading) {
+      flushParagraph()
+      blocks.push(<p key={`h-${blocks.length}`}><strong><InlineText text={heading[1]} /></strong></p>)
+      return
+    }
+    paragraph.push(line.trim())
+  })
+
+  flushList()
+  flushParagraph()
+  return blocks
+}
+
 function Message({ message }) {
   const isUser = message.role === 'user'
   return <article className={`chat-message ${isUser ? 'from-user' : 'from-assistant'}`}>
     {!isUser && <span className="chat-message-avatar"><Sparkles size={14} /></span>}
     <div className="chat-message-content">
-      <div className="chat-bubble">{message.content}</div>
+      <div className="chat-bubble"><FormattedReply content={message.content} /></div>
       {!isUser && <ActionResults actions={message.actions} />}
       <time dateTime={message.timestamp}>{new Date(message.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>
     </div>

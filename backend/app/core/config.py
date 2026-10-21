@@ -22,9 +22,9 @@ class Settings(BaseSettings):
     admin_name: str = "Administrator"
     admin_email: str = "admin@example.com"
     admin_password: SecretStr = SecretStr("CHANGE_ME_BEFORE_BOOTSTRAP")
-    ai_provider: Literal["openai"] = "openai"
-    ai_api_key: SecretStr | None = None
-    ai_model: str = "gpt-4o-mini"
+    ai_provider: Literal["openrouter"] = "openrouter"
+    openrouter_api_key: SecretStr | None = None
+    ai_model: str = "openrouter/free"
     ai_timeout_seconds: int = Field(default=30, gt=0, le=30)
     default_timezone: str = "Asia/Karachi"
 
@@ -37,6 +37,14 @@ class Settings(BaseSettings):
             ZoneInfo(value)
         except ZoneInfoNotFoundError as exc:
             raise ValueError("DEFAULT_TIMEZONE must be a valid IANA timezone.") from exc
+        return value
+
+    @field_validator("ai_model")
+    @classmethod
+    def require_free_openrouter_model(cls, value: str) -> str:
+        value = value.strip()
+        if value != "openrouter/free" and not value.endswith(":free"):
+            raise ValueError("AI_MODEL must use OpenRouter's free router or a :free model variant.")
         return value
 
 

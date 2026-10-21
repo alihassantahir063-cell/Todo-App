@@ -12,7 +12,7 @@ export default function AppShell({ admin = false, children }) {
   const { theme, toggleTheme } = useTheme()
   const { pathname } = useLocation()
   const links = admin
-    ? [{ to: '/admin', label: 'Overview', icon: LayoutDashboard, end: true }, { to: '/admin/users', label: 'Users', icon: Users }, { to: '/admin/tasks', label: 'All tasks', icon: ListTodo }]
+    ? [{ to: '/admin', label: 'Overview', icon: LayoutDashboard, end: true }, { to: '/admin/users', label: 'Users', icon: Users }, { to: '/admin/tasks', label: 'All tasks', icon: ListTodo }, { to: '/admin/profile', label: 'Profile', icon: Settings }]
     : [{ to: '/dashboard', label: 'Overview', icon: LayoutDashboard }, { to: '/tasks', label: 'My tasks', icon: ListTodo }, { to: '/profile', label: 'Profile', icon: Settings }]
   const initials = user?.name?.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase() || 'U'
   return <div className="app-shell">

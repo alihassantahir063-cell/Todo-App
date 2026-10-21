@@ -118,6 +118,27 @@ def test_auth_profile_change_and_logout(client):
     assert test_client.post("/api/auth/login", json={"email": "new@example.com", "password": "new-secure-pass456"}).status_code == 200
 
 
+def test_admin_can_change_password_from_authenticated_account(client):
+    test_client, _ = client
+    admin_token(test_client, _)
+    changed = test_client.post(
+        "/api/auth/change-password",
+        json={"current_password": "admin-pass123", "new_password": "admin-new-pass456"},
+    )
+    assert changed.status_code == 204
+
+    test_client.post("/api/auth/logout")
+    test_client.cookies.clear()
+    assert test_client.post(
+        "/api/auth/login",
+        json={"email": "admin@example.com", "password": "admin-pass123"},
+    ).status_code == 401
+    assert test_client.post(
+        "/api/auth/login",
+        json={"email": "admin@example.com", "password": "admin-new-pass456"},
+    ).status_code == 200
+
+
 def test_task_crud_toggle_stats_search_filter_sort_and_pagination(client):
     test_client, _ = client
     register(test_client, "Task Owner", "tasks@example.com")

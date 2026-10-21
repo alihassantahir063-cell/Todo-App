@@ -38,6 +38,7 @@ export default function App() {
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/admin/users" element={<AdminUsers />} />
             <Route path="/admin/tasks" element={<AdminTasks />} />
+            <Route path="/admin/profile" element={<Profile />} />
           </Route>
         </Route>
       </Route>
