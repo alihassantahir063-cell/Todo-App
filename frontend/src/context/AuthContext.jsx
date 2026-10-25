@@ -1,5 +1,5 @@
 import { createContext, useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { authService } from '../services/authService'
 import { onUnauthorized } from '../services/api'
 
@@ -9,11 +9,14 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
+  const { pathname } = useLocation()
 
   const clearUser = useCallback(() => {
     setUser(null)
-    navigate('/login', { replace: true })
-  }, [navigate])
+    if (!['/login', '/register', '/forgot-password', '/reset-password'].includes(pathname)) {
+      navigate('/login', { replace: true })
+    }
+  }, [navigate, pathname])
 
   useEffect(() => onUnauthorized(clearUser), [clearUser])
 

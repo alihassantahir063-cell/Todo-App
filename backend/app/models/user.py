@@ -24,6 +24,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    recovery_code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, name="user_role", values_callable=lambda enum_cls: [item.value for item in enum_cls]),
         default=UserRole.USER,

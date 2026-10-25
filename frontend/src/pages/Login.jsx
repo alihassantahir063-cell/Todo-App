@@ -23,6 +23,7 @@ export default function Login() {
     <form className="form-stack auth-form" onSubmit={handleSubmit(submit)}>
       <Input label="Email address" type="email" autoComplete="email" placeholder="you@example.com" error={errors.email?.message} {...register('email', { required: 'Enter your email' })} />
       <label className="field"><span className="field-label">Password</span><span className="password-wrap"><input className="input" type={show ? 'text' : 'password'} autoComplete="current-password" placeholder="Enter your password" aria-invalid={Boolean(errors.password)} {...register('password', { required: 'Enter your password' })} /><button type="button" className="password-toggle" aria-label={show ? 'Hide password' : 'Show password'} onClick={() => setShow(!show)}>{show ? <EyeOff size={18} /> : <Eye size={18} />}</button></span>{errors.password && <span className="field-error">{errors.password.message}</span>}</label>
+      <p className="auth-forgot"><Link to="/forgot-password">Forgot your password?</Link></p>
       {serverError && <p className="form-error" role="alert">{serverError}</p>}
       <Button type="submit" className="auth-submit" disabled={isSubmitting}>{isSubmitting ? 'Signing in…' : <>Sign in <ArrowRight size={17} /></>}</Button>
     </form>

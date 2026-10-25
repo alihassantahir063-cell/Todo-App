@@ -50,6 +50,9 @@ Use a fresh browser profile for the second user so the task ownership check is m
 - [ ] Complete a task with its checkbox, reopen it, reload the page, and confirm the persisted status.
 - [ ] Search tasks; filter by status and priority; sort by creation date, due date, and priority; move between pages.
 - [ ] Update the profile name/email, then change the password using the current password.
+- [ ] Request a password reset from the sign-in page, use the email link within 30 minutes, and confirm it cannot be reused. The same flow works for administrator accounts.
+- [ ] In profile settings, generate a recovery code with the current password, save it securely, sign out, and verify that the recovery-code option resets the password without email. Confirm a code cannot be reused or used after generating a replacement.
+- [ ] Allow browser notifications in profile settings, create a task with a due date, and verify a reminder is shown at 9:00 AM local time. Test a custom reminder time, completion before the reminder, and that the same scheduled reminder is not shown twice.
 - [ ] Sign out. Confirm you return to the login page and a protected route sends you back to login.
 - [ ] Create/sign in as a second user and confirm that user's task list does not contain the first user's task.
 
@@ -65,13 +68,14 @@ The backend remains the security boundary: client-side route guards are for navi
 
 ## AI assistant configuration
 
-The floating assistant is available from both authenticated workspaces. It uses the backend's OpenAI tool-calling integration; the browser only calls `/api/chat/message` and never receives provider credentials.
+The floating assistant is available from both authenticated workspaces. It uses OpenRouter's OpenAI-compatible tool-calling API; the browser only calls `/api/chat/message` and never receives provider credentials.
 
-- Configure `AI_PROVIDER=openai`, `AI_API_KEY`, `AI_MODEL` (default `gpt-4o-mini`), `AI_TIMEOUT_SECONDS`, and `DEFAULT_TIMEZONE` in `backend/.env`.
+- Configure `AI_PROVIDER=openrouter`, `OPENROUTER_API_KEY`, `AI_MODEL` (default `openrouter/free`), `AI_TIMEOUT_SECONDS`, and `DEFAULT_TIMEZONE` in `backend/.env`. The backend accepts the free router or a specific model ID ending in `:free`; paid model IDs are rejected. The free router does not fall back to paid models, and model availability/rate limits can vary.
 - Install `backend/requirements.txt` and run `alembic upgrade head` from `backend` to create the conversation tables.
-- If the provider key is absent, the UI shows the backend's configuration error; no fake responses are generated.
-- Conversation messages are stored with user ownership, a 24-message bound, and a 30-day retention window. Destructive/admin confirmations expire after 10 minutes. Clearing the chat deletes its server-side conversation.
-- The backend limits chat calls to 20 per minute. Configure provider-side budgets and monitor usage to manage costs.
+- If `OPENROUTER_API_KEY` is absent, the API reports a configuration error; no fake responses are generated.
+- User tools are scoped to the signed-in account. Admin tools are available only to administrators and follow the same role policy as the admin API. Deletions and sensitive admin changes require a separate yes/no confirmation tied to the conversation and selected record.
+- Conversations belong to the signed-in account, retain at most 24 recent messages, expire after 30 days, and are capped at 20 per account. Clearing the chat deletes its server-side conversation. Pending confirmations expire after 10 minutes.
+- The backend limits chat calls to 20 per minute. `DEFAULT_TIMEZONE` defaults to `Asia/Karachi` and must be a valid IANA timezone. Configure provider-side budgets and monitor usage.
 
 ## Troubleshooting
 

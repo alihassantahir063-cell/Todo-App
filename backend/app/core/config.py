@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import EmailStr, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=30, gt=0)
     cookie_secure: bool = False
     frontend_origin: str = "http://localhost:5173"
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=587, gt=0, le=65535)
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from_email: EmailStr | None = None
+    smtp_use_ssl: bool = False
     admin_name: str = "Administrator"
     admin_email: str = "admin@example.com"
     admin_password: SecretStr = SecretStr("CHANGE_ME_BEFORE_BOOTSTRAP")

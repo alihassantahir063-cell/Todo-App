@@ -10,7 +10,15 @@ from app.models.task import Task, TaskPriority
 from app.models.user import User
 from app.schemas.common import Page
 from app.schemas.task import TaskCreate, TaskOut, TaskStats, TaskUpdate
-from app.services.task_service import create_task, list_tasks, owned_task, task_stats, toggle_task, update_task
+from app.services.task_service import (
+    create_task,
+    due_reminders,
+    list_tasks,
+    owned_task,
+    task_stats,
+    toggle_task,
+    update_task,
+)
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 DbSession = Annotated[Session, Depends(get_db)]
@@ -66,6 +74,11 @@ def list_mine(
 @router.get("/stats", response_model=TaskStats)
 def stats(current_user: CurrentUser, db: DbSession) -> dict:
     return task_stats(db, current_user.id)
+
+
+@router.get("/reminders/due", response_model=list[TaskOut])
+def reminders_due(current_user: CurrentUser, db: DbSession) -> list[Task]:
+    return due_reminders(db, current_user.id)
 
 
 @router.get("/{task_id}", response_model=TaskOut)

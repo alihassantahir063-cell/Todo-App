@@ -12,6 +12,7 @@ class TaskCreate(ORMModel):
     description: str | None = None
     priority: TaskPriority = TaskPriority.MEDIUM
     due_date: date | None = None
+    reminder_at: datetime | None = None
 
     @field_validator("title")
     @classmethod
@@ -21,12 +22,20 @@ class TaskCreate(ORMModel):
             raise ValueError("Title cannot be blank")
         return value
 
+    @field_validator("reminder_at")
+    @classmethod
+    def require_timezone_for_reminder(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            raise ValueError("Reminder time must include a timezone")
+        return value
+
 
 class TaskUpdate(ORMModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None
     priority: TaskPriority | None = None
     due_date: date | None = None
+    reminder_at: datetime | None = None
 
     @field_validator("title", "priority", mode="before")
     @classmethod
@@ -45,6 +54,13 @@ class TaskUpdate(ORMModel):
             raise ValueError("Title cannot be blank")
         return value
 
+    @field_validator("reminder_at")
+    @classmethod
+    def require_timezone_for_reminder(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            raise ValueError("Reminder time must include a timezone")
+        return value
+
 
 class TaskOut(ORMModel):
     id: int
@@ -53,6 +69,7 @@ class TaskOut(ORMModel):
     status: TaskStatus
     priority: TaskPriority
     due_date: date | None
+    reminder_at: datetime | None
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None

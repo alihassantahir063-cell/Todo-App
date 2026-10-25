@@ -30,6 +30,12 @@ Copy-Item .env.example .env
 
 Edit `.env` and set `DATABASE_URL` to the role/database/password created above. Replace `SECRET_KEY` with a long, random value of at least 32 characters; set a strong `ADMIN_PASSWORD`; and ensure `FRONTEND_ORIGIN` matches the frontend URL exactly. The application deliberately refuses to start without an explicit database URL and signing key rather than falling back to insecure baked-in defaults. Keep `COOKIE_SECURE=false` only for local HTTP development. Use `COOKIE_SECURE=true` behind HTTPS in production. Never commit `.env`.
 
+Both regular users and administrators can create a password recovery code in their profile settings. Creating a code requires the current password; it is shown only once, so save it in a password manager. Creating another code invalidates the previous one. The code works without SMTP and can reset the password once; only its hash is stored in the database.
+
+Email recovery is also available when `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, and `SMTP_FROM_EMAIL` are configured. Port 587 uses STARTTLS by default; set `SMTP_USE_SSL=true` for an implicit-TLS server such as port 465. SMTP credentials must remain in the backend environment and must never be added to frontend variables. Email reset links expire after 30 minutes and can only be used once. The forgot-password endpoint returns a generic message for unknown email addresses. A password reset or authenticated password change invalidates any existing recovery code.
+
+Task reminders are browser notifications. A task with a due date gets a default reminder at 9:00 AM in the browser's local timezone; a custom date/time can replace it. Users and administrators must grant notification permission in their profile settings. The app checks due reminders while it is open and notifies each browser once per scheduled time. This is not a push-notification service: reminders cannot arrive while the browser/app is closed. Production hosting must use HTTPS; localhost is allowed for local development.
+
 The URL format is:
 
 ```text
@@ -62,6 +68,8 @@ uvicorn app.main:app --reload
 ```
 
 The API listens at <http://localhost:8000>, API paths start with `/api`, and Swagger UI is at <http://localhost:8000/docs>. The migration creates the initial `users` and `tasks` tables, PostgreSQL enums, foreign key, check constraints, and indexes. The admin CLI reads `ADMIN_NAME`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` from `.env`; it is safe to rerun for an existing administrator and refuses to silently promote an existing regular account.
+
+Users and administrators can choose **Forgot your password?** on the sign-in screen and enter their saved recovery code, email address, and a new password. Alternatively, configure SMTP to send a reset link. No role-specific setup is needed.
 
 Verify actual database connectivity and ORM relationships with:
 
@@ -157,12 +165,17 @@ All paths below are prefixed by `/api`. Authenticated means a valid access cooki
 | POST | `/auth/register` | No | Register a regular user |
 | POST | `/auth/login` | No | Sign in and set the HttpOnly access cookie |
 | POST | `/auth/logout` | No | Clear the access cookie |
+| POST | `/auth/forgot-password` | No | Request a password reset email (requires SMTP configuration) |
+| POST | `/auth/reset-password` | No | Reset a password with a valid email token |
+| POST | `/auth/reset-with-recovery-code` | No | Reset a password with a one-time recovery code |
 | GET | `/auth/me` | Yes | Return the current safe user profile |
 | PATCH | `/auth/me` | Yes | Update current user's name/email |
 | POST | `/auth/change-password` | Yes | Change password after current-password verification |
+| POST | `/auth/recovery-code` | Yes | Create or replace the account's one-time recovery code |
 | POST | `/tasks` | Yes | Create a task for the current user |
 | GET | `/tasks` | Yes | Search, filter, sort, and paginate current user's tasks |
 | GET | `/tasks/stats` | Yes | Return real totals, overdue count, and completion percentage |
+| GET | `/tasks/reminders/due` | Yes | Return pending tasks with reminders due in the last seven days |
 | GET | `/tasks/{task_id}` | Yes | Read an owned task; other users' tasks return 404 |
 | PATCH | `/tasks/{task_id}` | Yes | Update an owned task's editable fields |
 | PATCH | `/tasks/{task_id}/toggle` | Yes | Complete/reopen an owned task |
@@ -173,6 +186,8 @@ All paths below are prefixed by `/api`. Authenticated means a valid access cooki
 | PATCH | `/admin/users/{user_id}/status` | Admin | Activate/deactivate a user (admins cannot deactivate themselves) |
 | GET | `/admin/tasks` | Admin | Filter and paginate tasks across the workspace |
 | DELETE | `/admin/tasks/{task_id}` | Admin | Delete any task |
+| POST | `/chat/message` | Yes | Send a message to the AI assistant (OpenRouter configuration required) |
+| DELETE | `/chat/conversations/{conversation_id}` | Yes | Delete the current user's chat conversation |
 
 Paginated endpoints return `{ "items": [], "total": 0, "page": 1, "page_size": 10, "pages": 0 }`. Error responses use `{ "detail": "message" }`; request validation errors use FastAPI's standard 422 response.
 

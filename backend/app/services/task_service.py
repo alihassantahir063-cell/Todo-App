@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
@@ -19,6 +19,7 @@ def create_task(db: Session, user: User, payload: TaskCreate) -> Task:
         description=payload.description,
         priority=payload.priority,
         due_date=payload.due_date,
+        reminder_at=payload.reminder_at,
         user_id=user.id,
         status=TaskStatus.PENDING,
         completed_at=None,
@@ -91,6 +92,24 @@ def task_stats(db: Session, user_id: int, *, today: date | None = None) -> dict:
         "overdue": overdue,
         "completion_percentage": round(completed / total * 100, 2) if total else 0.0,
     }
+
+
+def due_reminders(db: Session, user_id: int, *, now: datetime | None = None) -> list[Task]:
+    now = now or datetime.now(timezone.utc)
+    reminder_window_start = now - timedelta(days=7)
+    return list(
+        db.scalars(
+            select(Task)
+            .where(
+                Task.user_id == user_id,
+                Task.status == TaskStatus.PENDING,
+                Task.reminder_at <= now,
+                Task.reminder_at >= reminder_window_start,
+            )
+            .order_by(Task.reminder_at.desc(), Task.id.asc())
+            .limit(100)
+        )
+    )
 
 
 def update_task(db: Session, task: Task, payload: TaskUpdate) -> Task:

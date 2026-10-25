@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useTheme } from '../hooks/useTheme'
 import { Button } from '../components/ui'
 import AIChatWidget from '../components/AIChatWidget'
+import ReminderNotifications from '../components/ReminderNotifications'
 
 export default function AppShell({ admin = false, children }) {
   const [drawer, setDrawer] = useState(false)
@@ -28,6 +29,9 @@ export default function AppShell({ admin = false, children }) {
     <div className="app-main"><header className="topbar"><button className="icon-button mobile-menu" aria-label="Open menu" onClick={() => setDrawer(true)}><Menu size={21} /></button><div className="breadcrumb">{admin ? 'Administration' : 'My workspace'} <span>/</span> <strong>{links.find((link) => pathname === link.to)?.label || (pathname.startsWith('/admin') ? 'Administration' : 'Overview')}</strong></div><div className="topbar-right"><span className="today">{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</span><Button variant="soft" className="topbar-theme" aria-label="Toggle color theme" onClick={toggleTheme}>{theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</Button></div></header>
       <main className="page-content">{children}</main>
     </div>
-    {user && <AIChatWidget key={user.id} userId={user.id} />}
+    {user && <>
+      <ReminderNotifications key={user.id} userId={user.id} />
+      <AIChatWidget key={user.id} userId={user.id} />
+    </>}
   </div>
 }

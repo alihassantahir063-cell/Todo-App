@@ -83,6 +83,44 @@ class PasswordChange(ORMModel):
         return validate_password(value)
 
 
+class PasswordResetRequest(ORMModel):
+    email: EmailStr
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return value.lower()
+
+
+class PasswordReset(ORMModel):
+    token: str = Field(min_length=32, max_length=128)
+    new_password: str = Field(min_length=8)
+
+    @field_validator("new_password")
+    @classmethod
+    def enforce_password_policy(cls, value: str) -> str:
+        return validate_password(value)
+
+
+class RecoveryCodeCreate(ORMModel):
+    current_password: str = Field(min_length=1)
+
+
+class PasswordRecovery(PasswordResetRequest):
+    recovery_code: str = Field(min_length=32, max_length=64)
+    new_password: str = Field(min_length=8)
+
+    @field_validator("recovery_code")
+    @classmethod
+    def normalize_recovery_code(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("new_password")
+    @classmethod
+    def enforce_password_policy(cls, value: str) -> str:
+        return validate_password(value)
+
+
 class UserOut(ORMModel):
     id: int
     name: str

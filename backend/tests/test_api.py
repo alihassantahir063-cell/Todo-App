@@ -1,6 +1,11 @@
-from datetime import date, timedelta
+import hashlib
+from datetime import date, datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlsplit
+
+from sqlalchemy import select
 
 from app.core.security import hash_password
+from app.models.password_reset import PasswordResetToken
 from app.models.task import Task
 from app.models.user import User, UserRole
 from tests.conftest import register
@@ -139,6 +144,195 @@ def test_admin_can_change_password_from_authenticated_account(client):
     ).status_code == 200
 
 
+def test_forgot_and_reset_password_works_for_user_and_admin(client, monkeypatch):
+    import app.api.auth as auth_api
+
+    test_client, session_factory = client
+    sent_emails = []
+    monkeypatch.setattr(auth_api, "smtp_is_configured", lambda: True)
+    monkeypatch.setattr(auth_api, "send_password_reset_email", lambda email, url: sent_emails.append((email, url)))
+
+    register(test_client, "Regular", "reset-user@example.com")
+    admin_token(test_client, session_factory, email="reset-admin@example.com")
+
+    for email, previous_password in (
+        ("reset-user@example.com", "secure-pass123"),
+        ("reset-admin@example.com", "admin-pass123"),
+    ):
+        response = test_client.post("/api/auth/forgot-password", json={"email": email})
+        assert response.status_code == 200
+        assert response.json()["message"] == auth_api.PASSWORD_RESET_MESSAGE
+        sent_email, reset_url = sent_emails[-1]
+        assert sent_email == email
+
+        token = parse_qs(urlsplit(reset_url).fragment)["token"][0]
+        with session_factory() as db:
+            user_id = db.scalar(select(User.id).where(User.email == email))
+            saved_token = db.get(
+                PasswordResetToken,
+                db.scalar(
+                    select(PasswordResetToken.token_hash).where(PasswordResetToken.user_id == user_id)
+                ),
+            )
+            assert saved_token is not None
+            assert token not in saved_token.token_hash
+
+        reset = test_client.post(
+            "/api/auth/reset-password",
+            json={"token": token, "new_password": "reset-new-pass456"},
+        )
+        assert reset.status_code == 204
+        assert test_client.post(
+            "/api/auth/reset-password",
+            json={"token": token, "new_password": "reset-again-pass789"},
+        ).status_code == 400
+        assert test_client.post(
+            "/api/auth/login",
+            json={"email": email, "password": previous_password},
+        ).status_code == 401
+        assert test_client.post(
+            "/api/auth/login",
+            json={"email": email, "password": "reset-new-pass456"},
+        ).status_code == 200
+        test_client.post("/api/auth/logout")
+
+
+def test_password_reset_request_does_not_disclose_unknown_accounts(client, monkeypatch):
+    import app.api.auth as auth_api
+
+    test_client, _ = client
+    sent_emails = []
+    monkeypatch.setattr(auth_api, "smtp_is_configured", lambda: True)
+    monkeypatch.setattr(auth_api, "send_password_reset_email", lambda email, url: sent_emails.append(email))
+
+    register(test_client, "Known", "known-reset@example.com")
+    known = test_client.post("/api/auth/forgot-password", json={"email": "known-reset@example.com"})
+    unknown = test_client.post("/api/auth/forgot-password", json={"email": "unknown-reset@example.com"})
+
+    assert known.status_code == unknown.status_code == 200
+    assert known.json() == unknown.json()
+    assert sent_emails == ["known-reset@example.com"]
+
+
+def test_password_reset_email_delivery_failure_keeps_generic_response(client, monkeypatch):
+    import app.api.auth as auth_api
+
+    test_client, _ = client
+    monkeypatch.setattr(auth_api, "smtp_is_configured", lambda: True)
+
+    def fail_delivery(email, url):
+        raise OSError("SMTP unavailable")
+
+    monkeypatch.setattr(auth_api, "send_password_reset_email", fail_delivery)
+    register(test_client, "Known", "delivery-failure@example.com")
+
+    known = test_client.post("/api/auth/forgot-password", json={"email": "delivery-failure@example.com"})
+    unknown = test_client.post("/api/auth/forgot-password", json={"email": "missing@example.com"})
+
+    assert known.status_code == unknown.status_code == 200
+    assert known.json() == unknown.json()
+
+
+def test_password_reset_requires_configured_smtp(client, monkeypatch):
+    import app.api.auth as auth_api
+
+    test_client, _ = client
+    monkeypatch.setattr(auth_api, "smtp_is_configured", lambda: False)
+    response = test_client.post("/api/auth/forgot-password", json={"email": "unknown@example.com"})
+    assert response.status_code == 503
+
+
+def test_password_reset_rejects_invalid_token_and_weak_password(client):
+    test_client, _ = client
+    invalid = test_client.post(
+        "/api/auth/reset-password",
+        json={"token": "x" * 32, "new_password": "valid-pass123"},
+    )
+    weak = test_client.post(
+        "/api/auth/reset-password",
+        json={"token": "x" * 32, "new_password": "onlyletters"},
+    )
+    assert invalid.status_code == 400
+    assert weak.status_code == 422
+
+
+def test_recovery_code_resets_password_for_users_and_admins_once(client):
+    test_client, session_factory = client
+    user = register(test_client, "Recovery User", "recovery-user@example.com")
+    admin_token(test_client, session_factory, email="recovery-admin@example.com")
+
+    for email, old_password in (
+        (user["email"], "secure-pass123"),
+        ("recovery-admin@example.com", "admin-pass123"),
+    ):
+        login_response = test_client.post("/api/auth/login", json={"email": email, "password": old_password})
+        assert login_response.status_code == 200
+        rejected = test_client.post("/api/auth/recovery-code", json={"current_password": "incorrect-pass123"})
+        assert rejected.status_code == 400
+
+        created = test_client.post("/api/auth/recovery-code", json={"current_password": old_password})
+        assert created.status_code == 200
+        recovery_code = created.json()["recovery_code"]
+        with session_factory() as db:
+            account = db.scalar(select(User).where(User.email == email))
+            assert account.recovery_code_hash == hashlib.sha256(recovery_code.encode()).hexdigest()
+            assert recovery_code not in account.recovery_code_hash
+
+        test_client.post("/api/auth/logout")
+        reset = test_client.post(
+            "/api/auth/reset-with-recovery-code",
+            json={
+                "email": email,
+                "recovery_code": recovery_code,
+                "new_password": "recovered-pass456",
+            },
+        )
+        assert reset.status_code == 204
+        reused = test_client.post(
+            "/api/auth/reset-with-recovery-code",
+            json={
+                "email": email,
+                "recovery_code": recovery_code,
+                "new_password": "recovered-again789",
+            },
+        )
+        assert reused.status_code == 400
+        assert test_client.post("/api/auth/login", json={"email": email, "password": old_password}).status_code == 401
+        assert test_client.post(
+            "/api/auth/login",
+            json={"email": email, "password": "recovered-pass456"},
+        ).status_code == 200
+        test_client.post("/api/auth/logout")
+
+
+def test_recovery_code_rotation_invalidates_previous_code(client):
+    test_client, _ = client
+    user = register(test_client, "Recovery Rotation", "rotation@example.com")
+    test_client.post("/api/auth/login", json={"email": user["email"], "password": "secure-pass123"})
+
+    first_code = test_client.post(
+        "/api/auth/recovery-code",
+        json={"current_password": "secure-pass123"},
+    ).json()["recovery_code"]
+    second_code = test_client.post(
+        "/api/auth/recovery-code",
+        json={"current_password": "secure-pass123"},
+    ).json()["recovery_code"]
+
+    old_code_response = test_client.post(
+        "/api/auth/reset-with-recovery-code",
+        json={"email": user["email"], "recovery_code": first_code, "new_password": "rotated-pass456"},
+    )
+    assert old_code_response.status_code == 400
+
+    test_client.post("/api/auth/logout")
+    current_code_response = test_client.post(
+        "/api/auth/reset-with-recovery-code",
+        json={"email": user["email"], "recovery_code": second_code, "new_password": "rotated-pass456"},
+    )
+    assert current_code_response.status_code == 204
+
+
 def test_task_crud_toggle_stats_search_filter_sort_and_pagination(client):
     test_client, _ = client
     register(test_client, "Task Owner", "tasks@example.com")
@@ -172,6 +366,53 @@ def test_task_crud_toggle_stats_search_filter_sort_and_pagination(client):
     assert test_client.get(f"/api/tasks/{one['id']}").status_code == 200
     assert test_client.delete(f"/api/tasks/{one['id']}").status_code == 204
     assert test_client.get(f"/api/tasks/{one['id']}").status_code == 404
+
+
+def test_due_reminders_are_timezone_aware_pending_and_user_scoped(client):
+    test_client, _ = client
+    assert test_client.get("/api/tasks/reminders/due").status_code == 401
+
+    register(test_client, "Reminder Owner", "reminder-owner@example.com")
+    test_client.post("/api/auth/login", json={"email": "reminder-owner@example.com", "password": "secure-pass123"})
+    reminder_at = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+    due = test_client.post(
+        "/api/tasks",
+        json={"title": "Send reminder", "due_date": date.today().isoformat(), "reminder_at": reminder_at},
+    )
+    assert due.status_code == 201, due.text
+    assert due.json()["reminder_at"] is not None
+
+    without_reminder = test_client.post(
+        "/api/tasks",
+        json={"title": "No reminder", "due_date": date.today().isoformat()},
+    )
+    assert without_reminder.status_code == 201, without_reminder.text
+    invalid_timezone = test_client.post(
+        "/api/tasks",
+        json={"title": "Naive reminder", "reminder_at": "2026-10-22T09:00:00"},
+    )
+    assert invalid_timezone.status_code == 422
+
+    completed = test_client.post(
+        "/api/tasks",
+        json={"title": "Completed reminder", "reminder_at": reminder_at},
+    )
+    assert completed.status_code == 201
+    assert test_client.patch(f"/api/tasks/{completed.json()['id']}/toggle").status_code == 200
+
+    reminders = test_client.get("/api/tasks/reminders/due")
+    assert reminders.status_code == 200
+    assert [task["id"] for task in reminders.json()] == [due.json()["id"]]
+
+    test_client.post("/api/auth/logout")
+    register(test_client, "Other Owner", "reminder-other@example.com")
+    test_client.post("/api/auth/login", json={"email": "reminder-other@example.com", "password": "secure-pass123"})
+    other_due = test_client.post(
+        "/api/tasks",
+        json={"title": "Other user's reminder", "reminder_at": reminder_at},
+    )
+    assert other_due.status_code == 201
+    assert [task["id"] for task in test_client.get("/api/tasks/reminders/due").json()] == [other_due.json()["id"]]
 
 
 def test_task_ownership_hides_another_users_task_for_all_mutations(client):
